@@ -26,10 +26,10 @@ jobs:
 
     - name: Build EXE
       run: |
-        pyinstaller --onefile --console onlyyoutube.py
+        pyinstaller --onefile --console main.py
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: onlyyoutube-windows
-        path: dist/onlyyoutube.exe
+        path: dist/main.exe
