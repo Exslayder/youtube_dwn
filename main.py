@@ -4,6 +4,12 @@ import os
 import sys
 from pathlib import Path
 
+def get_ffmpeg_path():
+    if getattr(sys, 'frozen', False):
+        return os.path.join(sys._MEIPASS, "ffmpeg.exe")
+    return "ffmpeg"
+
+
 if getattr(sys, 'frozen', False):
     BASE_DIR = Path(sys.executable).parent
 else:
@@ -118,6 +124,7 @@ def download_flow(choice, settings):
         "noplaylist": True,
         "progress_hooks": [progress_hook],
         "quiet": False,
+        "ffmpeg_location": get_ffmpeg_path(),
         **opts
     }
 
