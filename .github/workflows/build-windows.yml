@@ -31,10 +31,7 @@ jobs:
         move ffmpeg-*/bin/ffmpeg.exe .
 
     - name: Build EXE
-      run: |
-        pyinstaller --onefile --console ^
-          --add-binary "ffmpeg.exe;." ^
-          main.py
+      run: pyinstaller --onefile --console --add-binary "ffmpeg.exe;." main.py
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
