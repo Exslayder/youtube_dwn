@@ -2,11 +2,17 @@ import yt_dlp
 import json
 import os
 import sys
+import shutil
 from pathlib import Path
 
 def get_ffmpeg_path():
     if getattr(sys, 'frozen', False):
         return os.path.join(sys._MEIPASS, "ffmpeg.exe")
+    
+    ffmpeg_exe = shutil.which("ffmpeg")
+    if ffmpeg_exe:
+        return ffmpeg_exe
+    
     return "ffmpeg"
 
 
@@ -135,12 +141,19 @@ def download_flow(choice, settings):
 # ---------- MAIN LOOP ----------
 def main():
     settings = load_settings()
+    
+    ffmpeg_path = get_ffmpeg_path()
+    print(f"\n🔧 FFmpeg: {ffmpeg_path}")
+    
+    if ffmpeg_path == "ffmpeg" or not os.path.isfile(ffmpeg_path):
+        print("⚠️  Предупреждение: ffmpeg может быть не найден!")
+        print("   Убедитесь, что ffmpeg установлен и доступен в PATH")
 
     while True:
         print("\n📥 YOUTUBE DOWNLOADER")
         print("1) Видео MP4 — максимальное качество")
         print("2) Видео WEBM — максимальное качество")
-        print("3) Только аудио → MP4 (AAC)")
+        print("3) Только аудио → M4A (AAC)")
         print("4) ⚙️ Настройки")
         print("9) ❌ Выход")
 
