@@ -15,7 +15,6 @@ def get_ffmpeg_path():
     
     return "ffmpeg"
 
-
 if getattr(sys, 'frozen', False):
     BASE_DIR = Path(sys.executable).parent
 else:
@@ -24,62 +23,71 @@ else:
 SETTINGS_FILE = BASE_DIR / "settings.json"
 DEFAULT_PATH = str(BASE_DIR)
 
-
-
 # ---------- SETTINGS ----------
 def load_settings():
+    default_settings = {
+        "audio_path": DEFAULT_PATH,
+        "video_path": DEFAULT_PATH
+    }
+
     if not os.path.exists(SETTINGS_FILE):
-        settings = {"download_path": DEFAULT_PATH}
-        save_settings(settings)
-        return settings
+        save_settings(default_settings)
+        return default_settings
 
     try:
         with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            settings = json.load(f)
+            updated = False
+            if "audio_path" not in settings:
+                settings["audio_path"] = settings.get("download_path", DEFAULT_PATH)
+                updated = True
+            if "video_path" not in settings:
+                settings["video_path"] = settings.get("download_path", DEFAULT_PATH)
+                updated = True
+            if updated:
+                save_settings(settings)
+            return settings
     except (json.JSONDecodeError, OSError):
         print("⚠️ settings.json повреждён, пересоздаю файл")
-        settings = {"download_path": DEFAULT_PATH}
-        save_settings(settings)
-        return settings
-
-
+        save_settings(default_settings)
+        return default_settings
 
 def save_settings(settings):
     with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
         json.dump(settings, f, indent=4, ensure_ascii=False)
 
+def get_new_path_from_user(current_path_type, current_path):
+    print(f"\n⚙️ ИЗМЕНЕНИЕ ПУТИ ДЛЯ: {current_path_type.upper()}")
+    print(f"Текущий путь: {current_path}")
+    new_path = input("Введи новый путь (или Enter чтобы оставить как есть): ").strip()
+    
+    if not new_path:
+        return current_path
+
+    path = Path(new_path).expanduser()
+    if path.exists() and path.is_dir():
+        return str(path.resolve())
+    else:
+        print("❌ Путь не существует или это не папка! Изменения не сохранены.")
+        return current_path
 
 def settings_menu(settings):
     while True:
-        print("\n⚙️ НАСТРОЙКИ")
-        print(f"📂 Текущий путь сохранения:\n{settings['download_path']}\n")
-
-        print("0) ⬅ Вернуться в главное меню")
-        print("1) Изменить путь сохранения")
+        print("\n⚙️ НАСТРОЙКИ ПУТЕЙ")
+        print(f"🎵 Для АУДИО: {settings['audio_path']}")
+        print(f"🎬 Для ВИДЕО: {settings['video_path']}")
+        print("1) Изменить путь для АУДИО")
+        print("2) Изменить путь для ВИДЕО")
+        print("\n0) ⬅ Назад")
 
         choice = input("Номер: ").strip()
-
-        if choice == "0":
-            return
-
+        if choice == "0": break
         elif choice == "1":
-            print("\nФормат ввода пути:")
-            print(" Linux:   /home/user/Videos")
-            print(" Windows: C:/Users/User/Videos\n")
-
-            new_path = input("Введи новый путь: ").strip()
-            path = Path(new_path).expanduser()
-
-            if path.exists() and path.is_dir():
-                settings["download_path"] = str(path.resolve())
-                save_settings(settings)
-                print("✅ Путь сохранения обновлён")
-            else:
-                print("❌ Путь не существует или это не папка")
-
-        else:
-            print("❌ Неверный выбор")
-
+            settings["audio_path"] = get_new_path_from_user("аудио", settings["audio_path"])
+            save_settings(settings)
+        elif choice == "2":
+            settings["video_path"] = get_new_path_from_user("видео", settings["video_path"])
+            save_settings(settings)
 
 # ---------- DOWNLOAD ----------
 def choose_options(choice: str):
@@ -94,84 +102,136 @@ def choose_options(choice: str):
             "format": "bv*[ext=webm]+ba[ext=webm]/bv*+ba/best",
             "merge_output_format": "webm",
         }
-
+        
     elif choice == "3":
         return {
-            "format": "ba[ext=m4a]/ba/best",
-            "postprocessors": [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "m4a",
-            }],
+            "format": "bestaudio/best",
+            "writethumbnail": True,
+            "postprocessors": [
+                {
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": "320",
+                },
+                {
+                    "key": "FFmpegThumbnailsConvertor",
+                    "format": "jpg",
+                },
+                {
+                    "key": "EmbedThumbnail",
+                },
+                {
+                    "key": "FFmpegMetadata",
+                    "add_metadata": True,
+                },
+            ],
+            "postprocessor_args": {
+                "ffmpeg": [
+                    "-id3v2_version", "3",
+                    "-metadata:s:v", "title=\"Album cover\"",
+                    "-metadata:s:v", "comment=\"Cover (Front)\""
+                ]
+            },
         }
-
     return None
-
 
 def progress_hook(d):
     if d["status"] == "downloading":
+        info = d.get('info_dict', {})
+        p_index = info.get('playlist_index')
+        n_entries = info.get('n_entries')
+        if p_index is None:
+            p_index = 1
+            n_entries = 1
         percent = d.get("_percent_str", "").strip()
         speed = d.get("_speed_str", "").strip()
-        eta = d.get("_eta_str", "").strip()
-        print(f"\r⬇ {percent} | {speed} | ETA {eta}", end="")
-    elif d["status"] == "finished":
-        print("\n✅ Скачивание завершено")
+        print(f"\r📦\tФайл [{p_index}/{n_entries}] | ⬇ {percent} | {speed}          ", end="", flush=True)
 
+class MyLogger:
+    def __init__(self):
+        self.error_count = 0
+        self.reasons = set()
+
+    def debug(self, msg): pass
+    def warning(self, msg): pass
+
+    def error(self, msg):
+        if "Sign in to confirm your age" in msg:
+            self.error_count += 1
+            self.reasons.add("18+ content. Need cookies")
+        elif "is unavailable" in msg or "private" in msg:
+            self.error_count += 1
+            self.reasons.add("Video is unavailable or private")
+        elif "ERROR:" in msg:
+            self.error_count += 1
+            clean_err = msg.split(':')[ -1 ].strip().split('.')[0]
+            self.reasons.add(clean_err)
 
 def download_flow(choice, settings):
-    url = input("\nВставь ссылку на YouTube видео: ").strip()
+    url = input("\nВставь ссылку: ").strip()
     opts = choose_options(choice)
+    if not opts: return
+    
+    download_path = settings["audio_path"] if choice == "3" else settings["video_path"]
+    outtmpl = "%(title)s - %(uploader)s.%(ext)s" if choice == "3" else "%(title)s.%(ext)s"
 
-    if not opts:
-        print("❌ Неверный выбор")
-        return
-
+    logger_instance = MyLogger()
+    
     ydl_opts = {
-        "outtmpl": os.path.join(settings["download_path"], "%(title)s.%(ext)s"),
-        "noplaylist": True,
+        "outtmpl": os.path.join(download_path, outtmpl),
+        "noplaylist": False,
         "progress_hooks": [progress_hook],
-        "quiet": False,
         "ffmpeg_location": get_ffmpeg_path(),
+        "quiet": True,
+        "no_warnings": True,
+        "noprogress": True,
+        "ignoreerrors": True, 
+        "logger": logger_instance,
+        "writethumbnail": opts.get("writethumbnail", False),
+        "overwrites": True,
+        "updatetime": False,
         **opts
     }
 
+    print("\n🚀 Начинаю загрузку...")
+
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.download([url])
+    if choice == "3":
+        image_extensions = {".jpg", ".jpeg", ".webp", ".png"}
+        for file in os.listdir(download_path):
+            file_path = os.path.join(download_path, file)
+            name, ext = os.path.splitext(file)
+            if ext.lower() in image_extensions:
+                if not os.path.exists(os.path.join(download_path, name + ".mp3")):
+                    try:
+                        os.remove(file_path)
+                    except:
+                        pass
 
+    print(f"\n\n✨\tСКАЧИВАНИЕ ЗАВЕРШЕНО")
+    if logger_instance.error_count > 0:
+        media_type = "аудио" if choice == "3" else "видео"
+        reasons = ", ".join(logger_instance.reasons)
+        print(f"⚠️\tНе удалось скачать {logger_instance.error_count} {media_type} по причине: {reasons}")
+    else:
+        print(f"🎉\tВсе файлы успешно сохранены!")
 
-# ---------- MAIN LOOP ----------
+# ---------- MENU ----------
 def main():
     settings = load_settings()
-    
-    ffmpeg_path = get_ffmpeg_path()
-    print(f"\n🔧 FFmpeg: {ffmpeg_path}")
-    
-    if ffmpeg_path == "ffmpeg" or not os.path.isfile(ffmpeg_path):
-        print("⚠️  Предупреждение: ffmpeg может быть не найден!")
-        print("   Убедитесь, что ffmpeg установлен и доступен в PATH")
-
     while True:
-        print("\n📥 YOUTUBE DOWNLOADER")
-        print("1) Видео MP4 — максимальное качество")
-        print("2) Видео WEBM — максимальное качество")
-        print("3) Только аудио → M4A (AAC)")
-        print("4) ⚙️ Настройки")
-        print("9) ❌ Выход")
+        print("\n📥 Youtube and SoundCloud DOWNLOADER")
+        print("1) 🎥\tВидео MP4 - максимально доступное качество")
+        print("2) 🎬\tВидео WEBM - максимально доступное качество")
+        print("3) 🔊\tАудио MP3 - 320kbps")
+        print("4) 🔧\tНастройки")
+        print("0) ❌\tВыход")
 
         choice = input("Номер: ").strip()
-
-        if choice == "9":
-            print("👋 Завершение работы")
-            break
-
-        elif choice == "4":
-            settings_menu(settings)
-
-        elif choice in {"1", "2", "3"}:
-            download_flow(choice, settings)
-
-        else:
-            print("❌ Неверный выбор")
-
+        if choice == "0": break
+        elif choice == "4": settings_menu(settings)
+        elif choice in {"1", "2", "3"}: download_flow(choice, settings)
 
 if __name__ == "__main__":
     main()
