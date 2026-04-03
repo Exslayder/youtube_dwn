@@ -15,4 +15,4 @@
 python main.py
 ```
 ## Пример
-<img width="1478" height="750" alt="image" src="https://github.com/user-attachments/assets/8be752d7-ea91-4fe9-ab11-f83d5b509e8a" />
+<img width="1109" height="615" alt="image" src="https://github.com/user-attachments/assets/961c9313-1a37-43b5-ae6d-524786a60685" />
